@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Student Task Manager</title>
+  <style>
+    :root { --bg:#f5f6fa; --card:#fff; --text:#1f2430; --muted:#6b7280; --accent:#4f46e5; --border:#e5e7eb; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#14161c; --card:#1e212b; --text:#e8eaf0; --muted:#9aa1b2; --border:#2d3140; }
+    }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 1.5rem 1rem; }
+    main { max-width: 720px; margin: 0 auto; }
+    h1 { margin: 0 0 .25rem; }
+    .sub { color: var(--muted); margin: 0 0 1.25rem; font-size: .9rem; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem; margin-bottom: 1rem; }
+    .stat { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: .6rem; text-align: center; }
+    .stat b { display: block; font-size: 1.4rem; }
+    .stat span { color: var(--muted); font-size: .75rem; }
+    form, .task { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: .8rem; }
+    form { display: grid; grid-template-columns: 2fr 1fr; gap: .5rem; margin-bottom: 1rem; }
+    form .full { grid-column: 1 / -1; }
+    input, select, button { font: inherit; padding: .5rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+    button.primary { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
+    .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .5rem; }
+    .filters { display: flex; gap: .5rem; margin-bottom: .75rem; flex-wrap: wrap; }
+    .task { display: flex; align-items: center; gap: .75rem; margin-bottom: .5rem; }
+    .task.done .title { text-decoration: line-through; color: var(--muted); }
+    .task .info { flex: 1; min-width: 0; }
+    .title { font-weight: 600; word-break: break-word; }
+    .meta { color: var(--muted); font-size: .8rem; margin-top: 2px; }
+    .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: .7rem; color: #fff; margin-right: 4px; }
+    .high { background:#dc2626; } .medium { background:#d97706; } .low { background:#059669; }
+    .overdue { color: #dc2626; font-weight: 600; }
+    .del { background: transparent; border: none; cursor: pointer; font-size: 1.1rem; }
+    footer { text-align:center; color: var(--muted); font-size: .75rem; margin-top: 2rem; }
+    .empty { text-align:center; color: var(--muted); padding: 1.5rem; }
+  </style>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+</head>
+<body>
+<main>
+  <h1>📚 Student Task Manager</h1>
+  <p class="sub">Track assignments, labs and exams by subject.</p>
+
+  <div class="stats" id="stats"></div>
+
+  <form id="add">
+    <input class="full" name="title" placeholder="What do you need to do?" required maxlength="120" />
+    <input name="subject" placeholder="Subject (e.g. DevOps)" maxlength="40" />
+    <div class="row full">
+      <input type="date" name="dueDate" placeholder="DD-MM-YYYY" />
+      <select name="priority">
+        <option value="medium">Medium priority</option>
+        <option value="high">High priority</option>
+        <option value="low">Low priority</option>
+      </select>
+      <button class="primary" type="submit">Add task</button>
+    </div>
+  </form>
+
+  <div class="filters">
+    <select id="status"><option value="">All</option><option value="pending">Pending</option><option value="done">Done</option></select>
+    <input id="subjectFilter" placeholder="Filter by subject" />
+  </div>
+
+  <div id="list"></div>
+  <footer>Version <span id="ver">…</span></footer>
+</main>
+
+<script>
+  const $ = (s) => document.querySelector(s);
+  const today = () => new Date().toISOString().slice(0, 10);
+  const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+  async function api(url, opts) {
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts });
+    return res.status === 204 ? null : res.json();
+  }
+
+  async function load() {
+    const params = new URLSearchParams();
+    if ($('#status').value) params.set('status', $('#status').value);
+    if ($('#subjectFilter').value.trim()) params.set('subject', $('#subjectFilter').value.trim());
+    const [tasks, stats] = await Promise.all([api('/api/tasks?' + params), api('/api/stats')]);
+
+    $('#stats').innerHTML = [['Total', stats.total], ['Pending', stats.pending], ['Done', stats.done], ['Overdue', stats.overdue]]
+      .map(([l, n]) => `<div class="stat"><b>${n}</b><span>${l}</span></div>`).join('');
+
+    const order = { high: 0, medium: 1, low: 2 };
+    tasks.sort((a, b) => a.done - b.done || (a.dueDate || '9').localeCompare(b.dueDate || '9') || order[a.priority] - order[b.priority]);
+
+    $('#list').innerHTML = tasks.length ? tasks.map((t) => {
+      const late = !t.done && t.dueDate && t.dueDate < today();
+      return `<div class="task ${t.done ? 'done' : ''}">
+        <input type="checkbox" ${t.done ? 'checked' : ''} onchange="toggle(${t.id}, this.checked)" />
+        <div class="info">
+          <div class="title">${esc(t.title)}</div>
+          <div class="meta"><span class="badge ${t.priority}">${t.priority}</span>${esc(t.subject)}
+            ${t.dueDate ? ` · <span class="${late ? 'overdue' : ''}">due ${t.dueDate}${late ? ' (overdue)' : ''}</span>` : ''}</div>
+        </div>
+        <button class="del" title="Delete" onclick="del(${t.id})">🗑</button>
+      </div>`;
+    }).join('') : '<div class="empty">No tasks yet. Add one above 👆</div>';
+  }
+
+  async function toggle(id, done) { await api('/api/tasks/' + id, { method: 'PATCH', body: JSON.stringify({ done }) }); load(); }
+  async function del(id) { await api('/api/tasks/' + id, { method: 'DELETE' }); load(); }
+
+  $('#add').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    Object.keys(f).forEach((k) => !f[k] && delete f[k]);
+    await api('/api/tasks', { method: 'POST', body: JSON.stringify(f) });
+    e.target.reset();
+    load();
+  });
+  $('#status').addEventListener('change', load);
+  $('#subjectFilter').addEventListener('input', load);
+
+  api('/api/version').then((d) => { $('#ver').textContent = d.version + ' @ ' + d.commit.slice(0, 7); });
+  load();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script>
+  flatpickr("input[name=dueDate]", {
+    altInput: true,
+    altFormat: "d-m-Y",
+    dateFormat: "Y-m-d"
+  });
+</script>
+</body>
+</html>
