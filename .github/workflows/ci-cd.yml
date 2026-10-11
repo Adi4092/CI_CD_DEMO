@@ -95,7 +95,6 @@ jobs:
   # ---------- CD: deploy to server over SSH ----------
   deploy:
     needs: docker
-    if: false # Disabled until cloud VM is set up
     runs-on: ubuntu-latest
     environment: production        # add required reviewers in repo settings for a manual approval gate
     steps:
