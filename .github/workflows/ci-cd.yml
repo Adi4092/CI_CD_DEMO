@@ -10,6 +10,10 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+  
 jobs:
   # ---------- CI: build, lint, test ----------
   build-and-test:
@@ -130,3 +134,4 @@ jobs:
             sleep 5
           done
           echo "Health check failed" && exit 1
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
