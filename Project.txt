@@ -1,0 +1,5 @@
+The app footer shows the version and the commit it was built from, and the same
+information is available at the api/version endpoint. That makes every release traceable.
+For rollback, we re-ran an earlier successful run from the Actions page. The pipeline
+rebuilt and redeployed that earlier commit, and the live app went back to the old version.
+Re-running the newer run moved it forward again.
